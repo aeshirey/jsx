@@ -11,6 +11,7 @@ enum Indexers {
 
 fn main() {
     let mut count = false;
+    let mut print_keys = false;
     let mut keep_invalid = false;
     let mut remove_quotes = false;
     let mut indexers = Vec::new();
@@ -18,7 +19,21 @@ fn main() {
     for arg in std::env::args().skip(1) {
         if arg == "-c" || arg == "--count" {
             count = true;
-        } else if arg == "-k" || arg == "--keep-invalid" {
+        } else if arg == "-h" || arg == "--help" {
+            println!("Usage: jsx -h or --help            Show this help message");
+            println!("Usage: jsx -c or --count           Display the count of values in an array or object");
+            println!(
+                "Usage: jsx -k or --keys            Display the keys within a selected object"
+            );
+            println!(
+                "Usage: jsx -i or --keep-invalid    Print empty row (instead of nothing) for 
+                                                        invalid json or too deep querying"
+            );
+            println!("Usage: jsx -q or --remove-quotes   Removes quotes from selected strings");
+            return;
+        } else if arg == "-k" || arg == "--keys" {
+            print_keys = true;
+        } else if arg == "-i" || arg == "--keep-invalid" {
             keep_invalid = true;
         } else if arg == "-q" || arg == "--remove-quotes" {
             remove_quotes = true;
@@ -37,23 +52,36 @@ fn main() {
         if let Ok(j) = j {
             if let Some(val) = recurse(j, &indexers[..]) {
                 match &val {
-                    Value::Array(a) => {
-                        if count {
-                            println!("{}", a.len());
-                        } else {
-                            println!("{val}");
+                    Value::Array(a) if count => println!("{}", a.len()),
+                    Value::Array(a) if print_keys => {
+                        let mut it = 0..a.len();
+                        if let Some(i) = it.next() {
+                            print!("{}", i);
+                            for i in it {
+                                print!(", {}", i);
+                            }
+
+                            println!();
                         }
                     }
-                    Value::Object(o) => {
-                        if count {
-                            println!("{}", o.len());
-                        } else {
-                            println!("{val}");
+                    Value::Array(_) => println!("{val}"),
+
+                    Value::Object(o) if count => println!("{}", o.len()),
+                    Value::Object(o) if print_keys => {
+                        let mut it = o.keys();
+
+                        if let Some(k) = it.next() {
+                            print!("{}", k);
+                            for k in it {
+                                print!(", {}", k);
+                            }
+                            println!();
                         }
                     }
-                    Value::String(s) if remove_quotes => {
-                        println!("{}", s.trim_matches('"'));
-                    }
+                    Value::Object(_) => println!("{val}"),
+
+                    Value::String(s) if remove_quotes => println!("{}", s.trim_matches('"')),
+
                     v => println!("{v}"),
                 }
             } else if keep_invalid {
