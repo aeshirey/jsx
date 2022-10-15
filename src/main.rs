@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde_json::Value;
 
 enum Indexers {
@@ -15,8 +17,10 @@ fn main() {
     let mut keep_invalid = false;
     let mut remove_quotes = false;
     let mut indexers = Vec::new();
+    let mut prune = HashSet::new();
 
-    for arg in std::env::args().skip(1) {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
         if arg == "-c" || arg == "--count" {
             count = true;
         } else if arg == "-h" || arg == "--help" {
@@ -29,6 +33,10 @@ fn main() {
                 "Usage: jsx -i or --keep-invalid    Print empty row (instead of nothing) for 
                                                         invalid json or too deep querying"
             );
+            println!(
+                "Usage: jsx --prune field_name          Remove 'field_name' before counting, printing keys,
+                    or: jsx -p field_name               or printing the row. Can be used multiple times"
+            );
             println!("Usage: jsx -q or --remove-quotes   Removes quotes from selected strings");
             return;
         } else if arg == "-k" || arg == "--keys" {
@@ -37,6 +45,15 @@ fn main() {
             keep_invalid = true;
         } else if arg == "-q" || arg == "--remove-quotes" {
             remove_quotes = true;
+        } else if arg == "-p" || arg == "--prune" {
+            // The next argumen is the name of a column to prune
+            match args.next() {
+                Some(p) => prune.insert(p.to_string()),
+                None => {
+                    eprintln!("{arg} must be followed by the name of a field to remove");
+                    return;
+                }
+            };
         } else {
             match arg.parse() {
                 Ok(u) => indexers.push(Indexers::Number(arg, u)),
@@ -50,8 +67,8 @@ fn main() {
     while stdin.read_line(&mut buffer).is_ok() && !buffer.is_empty() {
         let j: Result<Value, _> = serde_json::from_str(&buffer);
         if let Ok(j) = j {
-            if let Some(val) = recurse(j, &indexers[..]) {
-                match &val {
+            if let Some(mut val) = recurse(j, &indexers[..]) {
+                match &mut val {
                     Value::Array(a) if count => println!("{}", a.len()),
                     Value::Array(a) if print_keys => {
                         let mut it = 0..a.len();
@@ -66,19 +83,27 @@ fn main() {
                     }
                     Value::Array(_) => println!("{val}"),
 
-                    Value::Object(o) if count => println!("{}", o.len()),
-                    Value::Object(o) if print_keys => {
-                        let mut it = o.keys();
+                    Value::Object(o) => {
+                        if !prune.is_empty() {
+                            o.retain(|k, _| !prune.contains(k));
+                        }
 
-                        if let Some(k) = it.next() {
-                            print!("{}", k);
-                            for k in it {
-                                print!(", {}", k);
+                        if count {
+                            println!("{}", o.len());
+                        } else if print_keys {
+                            let mut it = o.keys();
+
+                            if let Some(k) = it.next() {
+                                print!("{}", k);
+                                for k in it {
+                                    print!(", {}", k);
+                                }
+                                println!();
                             }
-                            println!();
+                        } else {
+                            println!("{val}");
                         }
                     }
-                    Value::Object(_) => println!("{val}"),
 
                     Value::String(s) if remove_quotes => println!("{}", s.trim_matches('"')),
 
